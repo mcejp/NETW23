@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-from tilevision.path_util import circle, grid, line, polyline, rectangle_centered, triangle
+from tilevision.path_util import circle, grid, line, marching_squares_binary_fill, polyline, rectangle_centered, triangle
 from tilevision.tilevision import Label, Path as TvPath, TV
 
 
@@ -26,6 +26,7 @@ class Town:
 ######
 
 ENABLE_PLOTS = False
+HEIGHTMAP_DEBUG = False
 
 W = 50
 H = 50
@@ -97,6 +98,7 @@ lake_list = []
 for y, x in np.ndindex(height.shape):
     if height[y, x] < 0:
         lake_list.append((x, y))
+lake_map = (height < 0).astype(np.uint8)
 
 mountain_list = []
 for y, x in np.ndindex(height.shape):
@@ -433,8 +435,24 @@ class Kernel:
             tv_paths.append(TvPath(circle(x, y, r=math.sqrt(area / np.pi) * TV_SCALE), fill="rgba(0,0,0,0.2)"))
             tv_labels.append(Label(x, y, f"{t1.pop}", color="black"))
 
-        for x, y in lake_list:
-            tv_paths.append(TvPath(rectangle_centered(x, y, w=1, h=1), fill="rgba(0 20% 60% / 0.4)"))
+        if HEIGHTMAP_DEBUG:
+            hmin = np.min(height)
+            hmax = np.max(height)
+            for y, x in np.ndindex(height.shape):
+                h = height[y, x]
+                if h >= 0:
+                    t = np.log(h) / np.log(hmax)
+                    r, g, b = 1, 1 - t, 1 - t
+                else:
+                    t = np.log(-h) / np.log(-hmin)
+                    r, g, b = 1 - t, 1 - t, 1
+                rgb = f"rgb({r*100}% {g*100}% {b*100}% / 0.5)"
+                tv_paths.append(TvPath(rectangle_centered(x, y, 1, 1), fill=rgb))
+
+        # for x, y in lake_list:
+        #     tv_paths.append(TvPath(rectangle_centered(x, y, w=1, h=1), fill="rgba(100% 0% 0% / 0.2)"))
+
+        tv_paths.append(TvPath(marching_squares_binary_fill(lake_map), fill="rgba(0 20% 60% / 0.4)"))
 
         for x, y in mountain_list:
             tv_paths.append(TvPath(triangle(x, y, 0.5), fill="rgba(30% 30% 30%)"))
