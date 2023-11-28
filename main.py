@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-from tilevision.path_util import circle, line, polyline, rectangle_centered, triangle
+from tilevision.path_util import circle, grid, line, polyline, rectangle_centered, triangle
 from tilevision.tilevision import Label, Path as TvPath, TV
 
 
@@ -423,6 +423,8 @@ class Kernel:
         tv_paths = []
 
         TV_SCALE = 0.10
+
+        tv_paths_bg.append(TvPath(grid(W, H, -0.5, -0.5), linewidth=0.01, stroke="rgb(0% 0% 0% / 0.5)"))
 
         for i, t1 in enumerate(towns):
             x = float(t1.x)
