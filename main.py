@@ -1,4 +1,5 @@
 import heapq
+import logging
 import math
 import os
 from dataclasses import dataclass
@@ -10,10 +11,8 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-
-dir = Path(f'run_{datetime.now().strftime("%Y-%m-%dT%H-%M-%S")}_v2')
-dir.mkdir()
-os.chdir(dir)
+from tilevision.path_util import circle, line, polyline, triangle
+from tilevision.tilevision import Label, Path as TvPath, TV
 
 
 @dataclass
@@ -25,6 +24,8 @@ class Town:
 
 
 ######
+
+ENABLE_PLOTS = False
 
 W = 50
 H = 50
@@ -48,7 +49,13 @@ TURN_PENALTY = 0.05
 
 THROUGHPUT_LIMIT = 5000
 
-matplotlib.rcParams['figure.figsize'] = (9, 9)
+
+if ENABLE_PLOTS:
+    dir = Path(f'run_{datetime.now().strftime("%Y-%m-%dT%H-%M-%S")}_v2')
+    dir.mkdir()
+    os.chdir(dir)
+
+    matplotlib.rcParams['figure.figsize'] = (9, 9)
 
 rg = np.random.default_rng(seed=0)
 
@@ -197,8 +204,6 @@ def axes(ax):
     # ax.grid()
     ax.set_aspect("equal")
 
-f, ax = plt.subplots()
-
 def show_towns(ax):
     for i, t1 in enumerate(towns):
         ax.scatter([t1.x], [t1.y], c="k", s=math.sqrt(t1.pop) * TOWN_DISPLAY_SCALE, alpha=0.2)
@@ -207,24 +212,26 @@ def show_towns(ax):
     ax.scatter(*zip(*lake_list), marker="o", color=(0, 0.2, 0.6), alpha=0.4)
     ax.scatter(*zip(*mountain_list), marker="^", color=(0.3, 0.3, 0.3))
 
-show_towns(ax)
+if ENABLE_PLOTS:
+    f, ax = plt.subplots()
+    show_towns(ax)
 
-# for i, t1 in enumerate(towns):
-#     for j, t2 in enumerate(towns):
-#         if j == i:
-#             continue
-#
-#         if j > i:
-#             ax.annotate(xytext=(t1.x, t1.y), xy=(t2.x, t2.y), arrowprops=dict(width=1, headwidth=5, color=(0,0,0,0.5)), text="")
-#
-#             ax.annotate(xy=(0,0), xytext=((t1.x + t2.x) / 2, (t1.y + t2.y) / 2), text=f"to: {traffic_directed[i, j]:.2f} "
-#                                                                                       f"back: {traffic_directed[j, i]:.2f} "
-#                                                                                       f"vol: {traffic_volume[j, i]:.2f}",
-#                         fontsize=8
-#                         )
+    # for i, t1 in enumerate(towns):
+    #     for j, t2 in enumerate(towns):
+    #         if j == i:
+    #             continue
+    #
+    #         if j > i:
+    #             ax.annotate(xytext=(t1.x, t1.y), xy=(t2.x, t2.y), arrowprops=dict(width=1, headwidth=5, color=(0,0,0,0.5)), text="")
+    #
+    #             ax.annotate(xy=(0,0), xytext=((t1.x + t2.x) / 2, (t1.y + t2.y) / 2), text=f"to: {traffic_directed[i, j]:.2f} "
+    #                                                                                       f"back: {traffic_directed[j, i]:.2f} "
+    #                                                                                       f"vol: {traffic_volume[j, i]:.2f}",
+    #                         fontsize=8
+    #                         )
 
-axes(ax)
-f.savefig("towns.png")
+    axes(ax)
+    f.savefig("towns.png")
 
 paths = []
 traffic_by_segment = {}     # maps (x, y, dx, dy) to total traffic passing
@@ -276,139 +283,159 @@ def compute_turn_severity(dx1, dy1, dx2, dy2):
 
     return round(abs(diff) / (math.pi * 0.25))
 
-step = 0
-
 num_steps = len(unconnected_pairs)
 
-while len(unconnected_pairs) > 0:
-    volume, idx1, idx2 = unconnected_pairs.pop(0)
+class Kernel:
+    _step: int = 0
 
-    t1 = towns[idx1]
-    t2 = towns[idx2]
+    def __init__(self, args, tv):
+        tv.send_hello(w=W, h=H, bg=["#fff" for _ in range(W * H)])
 
-    x1, y1 = t1.x, t1.y
-    x2, y2 = t2.x, t2.y
+    @property
+    def name(self):
+        return "NETW23"
 
-    print(f"[{1+step:4d}/{num_steps}] routing track {x1} {y1} --> {x2} {y2}")
+    def report(self, f):
+        pass
 
-    costs = np.full(shape=(H, W), fill_value=np.inf, dtype=float)
-    visited = np.zeros(shape=(H, W), dtype=np.uint8)
+    def step(self, tv):
+        if len(unconnected_pairs) == 0:
+            raise KeyboardInterrupt()
 
-    # priority queue
-    queue = [(0, x2, y2, None)]
+        step = self._step
 
-    def at(xx, yy):
-        if 0 <= xx < costs.shape[1] and 0 <= yy < costs.shape[0]:
-            return costs[yy, xx]
-        else:
-            return np.inf
+        volume, idx1, idx2 = unconnected_pairs.pop(0)
 
-    def height_at(xx, yy):
-        if 0 <= xx < height.shape[1] and 0 <= yy < height.shape[0]:
-            return height[yy, xx]
-        else:
-            return 0
+        t1 = towns[idx1]
+        t2 = towns[idx2]
 
-    while len(queue):
-        cost, xx, yy, prev = heapq.heappop(queue)
-        # print(xx, yy)
+        x1, y1 = t1.x, t1.y
+        x2, y2 = t2.x, t2.y
 
-        if not (0 <= xx < costs.shape[1] and 0 <= yy < costs.shape[0]):
-            continue
+        print(f"[{1+step:4d}/{num_steps}] routing track {x1} {y1} --> {x2} {y2}")
 
-        if visited[yy, xx]:
-            # already processed
-            # TODO: should this ever happen? yes, but not with lower cost than previously assigned
-            assert cost >= costs[yy, xx]
-            continue
+        costs = np.full(shape=(H, W), fill_value=np.inf, dtype=float)
+        visited = np.zeros(shape=(H, W), dtype=np.uint8)
 
-        costs[yy, xx] = cost
-        visited[yy, xx] = 1
+        # priority queue
+        queue = [(0, x2, y2, None)]
 
-        if (xx, yy) == (x1, y1):
-            # nothing more to do
-            break
+        def at(xx, yy):
+            if 0 <= xx < costs.shape[1] and 0 <= yy < costs.shape[0]:
+                return costs[yy, xx]
+            else:
+                return np.inf
 
-        for dx, dy, length in DIRS:
-            if height_at(xx + dx, yy + dy) < 0 or height_at(xx + dx, yy + dy) > MOUNTAIN_THR:
+        def height_at(xx, yy):
+            if 0 <= xx < height.shape[1] and 0 <= yy < height.shape[0]:
+                return height[yy, xx]
+            else:
+                return 0
+
+        while len(queue):
+            cost, xx, yy, prev = heapq.heappop(queue)
+            # print(xx, yy)
+
+            if not (0 <= xx < costs.shape[1] and 0 <= yy < costs.shape[0]):
                 continue
 
-            # valid turn?
-            if prev is not None:
-                severity = compute_turn_severity(-prev[0], -prev[1], dx, dy)
+            if visited[yy, xx]:
+                # already processed
+                # TODO: should this ever happen? yes, but not with lower cost than previously assigned
+                assert cost >= costs[yy, xx]
+                continue
 
-                if severity > 2:
+            costs[yy, xx] = cost
+            visited[yy, xx] = 1
+
+            if (xx, yy) == (x1, y1):
+                # nothing more to do
+                break
+
+            for dx, dy, length in DIRS:
+                if height_at(xx + dx, yy + dy) < 0 or height_at(xx + dx, yy + dy) > MOUNTAIN_THR:
                     continue
-            else:
-                severity = 0
 
-            #segment_cost = length / math.pow(volume + get_segment_traffic(xx, yy, dx, dy), VOLUME_SPEEDUP_EXPONENT)
-            t = get_segment_traffic(xx, yy, dx, dy)
-            if t == 0:
-                build_cost = BUILD_COST * length
-            elif t + volume > THROUGHPUT_LIMIT:
-                continue
-            else:
-                build_cost = 0
-            segment_cost = severity * TURN_PENALTY + build_cost + length / math.pow(t + volume, VOLUME_SPEEDUP_EXPONENT)
-            heapq.heappush(queue, (cost + segment_cost, xx + dx, yy + dy, (-dx, -dy, prev)))
+                # valid turn?
+                if prev is not None:
+                    severity = compute_turn_severity(-prev[0], -prev[1], dx, dy)
 
-        #queue.sort()    # TODO: optimize
+                    if severity > 2:
+                        continue
+                else:
+                    severity = 0
 
-    # route it
-    xx, yy = x1, y1
+                #segment_cost = length / math.pow(volume + get_segment_traffic(xx, yy, dx, dy), VOLUME_SPEEDUP_EXPONENT)
+                t = get_segment_traffic(xx, yy, dx, dy)
+                if t == 0:
+                    build_cost = BUILD_COST * length
+                elif t + volume > THROUGHPUT_LIMIT:
+                    continue
+                else:
+                    build_cost = 0
+                segment_cost = severity * TURN_PENALTY + build_cost + length / math.pow(t + volume, VOLUME_SPEEDUP_EXPONENT)
+                heapq.heappush(queue, (cost + segment_cost, xx + dx, yy + dy, (-dx, -dy, prev)))
 
-    path = [(xx, yy)]
+            #queue.sort()    # TODO: optimize
 
-    while prev:
-        dx, dy, prev = prev
+        # route it
+        xx, yy = x1, y1
 
-        set_segment_traffic(xx, yy, dx, dy,
-                            get_segment_traffic(xx, yy, dx, dy) + volume)
-        xx, yy = xx + dx, yy + dy
+        path = [(xx, yy)]
 
-        path.append((xx, yy))
+        while prev:
+            dx, dy, prev = prev
 
-    # this is wrong! just because a tile is "cheap" does not mean that any edge leading into it is too
-    # while (xx, yy) != (x2, y2):
-    #     # look around and pick the best one
-    #     neighbor_costs = []
-    #     for dx, dy, _ in DIRS:
-    #         heapq.heappush(neighbor_costs, (at(xx + dx, yy + dy), dx, dy))
-    #     # neighbor_costs.sort()
-    #
-    #     min_cost, dx, dy = heapq.heappop(neighbor_costs)
-    #
-    #     # print(f"{xx} {yy} {min_cost}")
-    #
-    #     # if min_cost >= at(xx, yy):
-    #     #     print(f"PATH FINDING ERROR: min({neighbor_costs}) > {at(xx, yy)} (at {xx} {yy})")
-    #
-    #     assert min_cost < at(xx, yy)
-    #
-    #     set_segment_traffic(xx, yy, dx, dy,
-    #                         get_segment_traffic(xx, yy, dx, dy) + volume)
-    #     xx, yy = xx + dx, yy + dy
-    #
-    #     path.append((xx, yy))
+            set_segment_traffic(xx, yy, dx, dy,
+                                get_segment_traffic(xx, yy, dx, dy) + volume)
+            xx, yy = xx + dx, yy + dy
 
-    # print(path)
-    paths.append(path)
+            path.append((xx, yy))
 
-    if step + 1 == num_steps:
-        # force always the same filename for final step
-        step = 9999
+        # this is wrong! just because a tile is "cheap" does not mean that any edge leading into it is too
+        # while (xx, yy) != (x2, y2):
+        #     # look around and pick the best one
+        #     neighbor_costs = []
+        #     for dx, dy, _ in DIRS:
+        #         heapq.heappush(neighbor_costs, (at(xx + dx, yy + dy), dx, dy))
+        #     # neighbor_costs.sort()
+        #
+        #     min_cost, dx, dy = heapq.heappop(neighbor_costs)
+        #
+        #     # print(f"{xx} {yy} {min_cost}")
+        #
+        #     # if min_cost >= at(xx, yy):
+        #     #     print(f"PATH FINDING ERROR: min({neighbor_costs}) > {at(xx, yy)} (at {xx} {yy})")
+        #
+        #     assert min_cost < at(xx, yy)
+        #
+        #     set_segment_traffic(xx, yy, dx, dy,
+        #                         get_segment_traffic(xx, yy, dx, dy) + volume)
+        #     xx, yy = xx + dx, yy + dy
+        #
+        #     path.append((xx, yy))
 
-    if step < 10 or (step < 100 and step % 10 == 0) or (step < 1000 and step % 25 == 0) or step % 100 == 0 or step == 9999:
-        f, ax = plt.subplots()
+        # print(path)
+        paths.append(path)
 
-        im = ax.imshow(costs, origin="lower")
-        axes(ax)
-        f.colorbar(im)
-        f.savefig(f"costs_{step:04d}.png")
+        tv_labels = []
+        tv_paths_bg = []
+        tv_paths = []
 
-        f, ax = plt.subplots()
-        show_towns(ax)
+        TV_SCALE = 0.10
+
+        for i, t1 in enumerate(towns):
+            x = float(t1.x)
+            y = float(t1.y)
+            area = math.sqrt(t1.pop) * TOWN_DISPLAY_SCALE       # MPL uses points squared as the unit of size for scatter
+            tv_paths.append(TvPath(circle(x, y, r=math.sqrt(area / np.pi) * TV_SCALE), fill="rgba(0,0,0,0.2)"))
+            tv_labels.append(Label(x, y, f"{t1.pop}", color="black"))
+
+        for x, y in lake_list:
+            tv_paths.append(TvPath(circle(x, y, r=0.5), fill="rgba(0 20% 60% / 0.4)"))
+
+        for x, y in mountain_list:
+            tv_paths.append(TvPath(triangle(x, y, 0.5), fill="rgba(30% 30% 30%)"))
 
         for (xx, yy, dx, dy), vol in traffic_by_segment.items():
             if vol < 10: color = (0, 0, 1, 0.3)     # blue
@@ -418,14 +445,55 @@ while len(unconnected_pairs) > 0:
             elif vol < 1e5: color = (1, 0, 0, 0.5)      # red
             else: color = "black"
             lw = 0.5 + math.log2(vol) * 0.15
-            ax.plot([xx, xx + dx], [yy, yy + dy], color=color, linewidth=lw + 3, zorder=1) #
-            ax.plot([xx, xx + dx], [yy, yy + dy], color="k", linewidth=lw)
 
-        if step != 9999:
-            xs, ys = zip(*path)
-            # ax.plot(xs, ys, color="red", linewidth=8, alpha=0.25)
-            ax.plot(xs, ys, color="red", linewidth=2)
+            if isinstance(color, tuple):
+                r, g, b, a = color
+                color = f"rgba({r*100}% {g*100}% {b*100}% / {a})"
 
-        axes(ax)
-        f.savefig(f"paths_{step:04d}.png", bbox_inches="tight")
-    step += 1
+            tv_paths_bg.append(TvPath(line(xx, yy, xx + dx, yy + dy), linewidth=(lw + 3) * TV_SCALE, stroke=color))
+            tv_paths.append(TvPath(line(xx, yy, xx + dx, yy + dy), linewidth=lw * TV_SCALE, stroke="black"))
+
+        tv_paths.append(TvPath(polyline(path), linewidth=2 * TV_SCALE, stroke="red"))
+        tv.send_annotations(labels=tv_labels, paths=tv_paths_bg + tv_paths)
+
+        if step + 1 == num_steps:
+            # force always the same filename for final step
+            step = 9999
+
+        if ENABLE_PLOTS and (step < 10 or (step < 100 and step % 10 == 0) or (step < 1000 and step % 25 == 0) or step % 100 == 0 or step == 9999):
+            f, ax = plt.subplots()
+
+            im = ax.imshow(costs, origin="lower")
+            axes(ax)
+            f.colorbar(im)
+            # f.savefig(f"costs_{step:04d}.png")
+
+            f, ax = plt.subplots()
+            show_towns(ax)
+
+            for (xx, yy, dx, dy), vol in traffic_by_segment.items():
+                if vol < 10: color = (0, 0, 1, 0.3)     # blue
+                elif vol < 100: color = (0, 0.7, 0, 0.3)    # green
+                elif vol < 1e3: color = (1, 1, 0, 0.8)      # yellow
+                elif vol < 1e4: color = (1, 0.5, 0, 0.6)    # orange
+                elif vol < 1e5: color = (1, 0, 0, 0.5)      # red
+                else: color = "black"
+                lw = 0.5 + math.log2(vol) * 0.15
+                ax.plot([xx, xx + dx], [yy, yy + dy], color=color, linewidth=lw + 3, zorder=1) #
+                ax.plot([xx, xx + dx], [yy, yy + dy], color="k", linewidth=lw)
+
+            if step != 9999:
+                xs, ys = zip(*path)
+                # ax.plot(xs, ys, color="red", linewidth=8, alpha=0.25)
+                ax.plot(xs, ys, color="red", linewidth=2)
+
+            axes(ax)
+            # f.savefig(f"paths_{step:04d}.png", bbox_inches="tight")
+        self._step += 1
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+
+    from tilevision.runner import run_kernel
+    run_kernel(Kernel)
