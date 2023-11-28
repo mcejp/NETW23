@@ -11,7 +11,7 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 
-from tilevision.path_util import circle, line, polyline, triangle
+from tilevision.path_util import circle, line, polyline, rectangle_centered, triangle
 from tilevision.tilevision import Label, Path as TvPath, TV
 
 
@@ -432,7 +432,7 @@ class Kernel:
             tv_labels.append(Label(x, y, f"{t1.pop}", color="black"))
 
         for x, y in lake_list:
-            tv_paths.append(TvPath(circle(x, y, r=0.5), fill="rgba(0 20% 60% / 0.4)"))
+            tv_paths.append(TvPath(rectangle_centered(x, y, w=1, h=1), fill="rgba(0 20% 60% / 0.4)"))
 
         for x, y in mountain_list:
             tv_paths.append(TvPath(triangle(x, y, 0.5), fill="rgba(30% 30% 30%)"))
