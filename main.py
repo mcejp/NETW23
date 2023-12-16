@@ -432,8 +432,7 @@ class Kernel:
             x = float(t1.x)
             y = float(t1.y)
             area = math.sqrt(t1.pop) * TOWN_DISPLAY_SCALE       # MPL uses points squared as the unit of size for scatter
-            tv_paths.append(TvPath(circle(x, y, r=math.sqrt(area / np.pi) * TV_SCALE), fill="rgba(0,0,0,0.2)"))
-            tv_labels.append(Label(x, y, f"{t1.pop}", color="black"))
+            tv_paths.append(TvPath(circle(x, y, r=math.sqrt(area / np.pi) * TV_SCALE), fill="rgba(0,0,0,0.15)"))
 
         if HEIGHTMAP_DEBUG:
             hmin = np.min(height)
@@ -472,6 +471,12 @@ class Kernel:
 
             tv_paths_bg.append(TvPath(line(xx, yy, xx + dx, yy + dy), linewidth=(lw + 3) * TV_SCALE, stroke=color))
             tv_paths.append(TvPath(line(xx, yy, xx + dx, yy + dy), linewidth=lw * TV_SCALE, stroke="black"))
+
+        for town in towns:
+            x, y, pop = town.x, town.y, town.pop
+            tv_paths.append(TvPath(circle(x, y, r=0.35), fill="rgba(100% 100% 100%)"))
+            tv_paths.append(TvPath(circle(x, y, r=0.35), stroke="rgba(0 0 0)", linewidth=0.1))
+            tv_labels.append(Label(x + 0.5, y + 0.5, f"{pop}", color="black"))
 
         tv_paths.append(TvPath(polyline(path), linewidth=2 * TV_SCALE, stroke="red"))
         tv.send_annotations(labels=tv_labels, paths=tv_paths_bg + tv_paths)
