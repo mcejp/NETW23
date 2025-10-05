@@ -2,6 +2,7 @@ import heapq
 import logging
 import math
 import os
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,7 +18,7 @@ from tilevision.tilevision import Label, Path as TvPath, TV
 
 @dataclass
 class Town:
-    id: int
+    name: str
     x: int
     y: int
     pop: int
@@ -28,8 +29,6 @@ class Town:
 ENABLE_PLOTS = False
 HEIGHTMAP_DEBUG = False
 
-W = 50
-H = 50
 # POP_SCALE = 500
 POP_MEAN = 5
 POP_SIGMA = 1.4
@@ -60,83 +59,122 @@ if ENABLE_PLOTS:
 
 rg = np.random.default_rng(seed=0)
 
-# Spawn a lake
-xs = np.arange(0, W)
-ys = np.arange(0, H)
-yy, xx = np.meshgrid(xs, ys)
-height = np.full(shape=(H, W), fill_value=1, dtype=float)
+if len(sys.argv) == 2:
+    MAP_FILENAME = sys.argv.pop()
+else:
+    MAP_FILENAME = "japanx.tmj"
 
-for i in range(3):
-    x1 = rg.integers(W)
-    y1 = rg.integers(H)
+if not MAP_FILENAME:
+    W = 50
+    H = 50
+    MOUNTAIN_THR = 5
 
-    COUNT = 5
+    # Spawn a lake
+    xs = np.arange(0, W)
+    ys = np.arange(0, H)
+    yy, xx = np.meshgrid(xs, ys)
+    height = np.full(shape=(H, W), fill_value=1, dtype=float)
 
-    for j in range(COUNT):
-        SPREAD = 4
-        x = x1 + rg.normal(0, SPREAD)
-        y = y1 + rg.normal(0, SPREAD)
+    for i in range(3):
+        x1 = rg.integers(W)
+        y1 = rg.integers(H)
 
-        height = height - SPREAD / COUNT / np.sqrt(np.power(xx - x, 2) + np.power(yy - y, 2))
+        COUNT = 5
 
-for i in range(1):
-    x1 = rg.integers(W)
-    y1 = rg.integers(H)
+        for j in range(COUNT):
+            SPREAD = 4
+            x = x1 + rg.normal(0, SPREAD)
+            y = y1 + rg.normal(0, SPREAD)
 
-    COUNT = 12
+            height = height - SPREAD / COUNT / np.sqrt(np.power(xx - x, 2) + np.power(yy - y, 2))
 
-    for j in range(COUNT):
-        SPREAD = 4
-        x = x1 + rg.normal(0, SPREAD)
-        y = y1 + rg.normal(0, SPREAD)
+    for i in range(1):
+        x1 = rg.integers(W)
+        y1 = rg.integers(H)
 
-        height = height + 15 * SPREAD / COUNT / (np.power(xx - x, 2) + np.power(yy - y, 2))
+        COUNT = 12
 
-MOUNTAIN_THR = 5
+        for j in range(COUNT):
+            SPREAD = 4
+            x = x1 + rg.normal(0, SPREAD)
+            y = y1 + rg.normal(0, SPREAD)
 
-lake_list = []
-for y, x in np.ndindex(height.shape):
-    if height[y, x] < 0:
-        lake_list.append((x, y))
-lake_map = (height < 0).astype(np.uint8)
+            height = height + 15 * SPREAD / COUNT / (np.power(xx - x, 2) + np.power(yy - y, 2))
 
-mountain_list = []
-for y, x in np.ndindex(height.shape):
-    if height[y, x] > MOUNTAIN_THR:
-        mountain_list.append((x, y))
+    lake_list = []
+    for y, x in np.ndindex(height.shape):
+        if height[y, x] < 0:
+            lake_list.append((x, y))
+    lake_map = (height < 0).astype(np.uint8)
 
-"""
-- Place towns using Poisson sampling
-  - For each, select population from a log-normal distribution
-"""
+    mountain_list = []
+    for y, x in np.ndindex(height.shape):
+        if height[y, x] > MOUNTAIN_THR:
+            mountain_list.append((x, y))
 
-towns = []
+    """
+    - Place towns using Poisson sampling
+    - For each, select population from a log-normal distribution
+    """
 
-for i in range(1000):
-    if len(towns) >= MAX_TOWNS:
-        break
+    towns = []
 
-    x = rg.integers(W)
-    y = rg.integers(H)
-    pop = math.ceil(rg.lognormal(POP_MEAN, POP_SIGMA))
-
-    if height[y, x] < 0 or height[y, x] > MOUNTAIN_THR:
-        continue
-
-    too_close = False
-
-    for t in towns:
-        min_dist = MIN_TOWN_DIST + (math.sqrt(t.pop) + math.sqrt(pop)) * TOWN_DIST_FACTOR
-        if (t.x - x) ** 2 + (t.y - y) ** 2 < min_dist ** 2:
-            too_close = True
+    for i in range(1000):
+        if len(towns) >= MAX_TOWNS:
             break
 
-    if too_close:
-        continue
+        x = rg.integers(W)
+        y = rg.integers(H)
+        pop = math.ceil(rg.lognormal(POP_MEAN, POP_SIGMA))
 
-    towns.append(Town(id=len(towns), x=x, y=y, pop=pop))
+        if height[y, x] < 0 or height[y, x] > MOUNTAIN_THR:
+            continue
 
-pprint(towns)
+        too_close = False
+
+        for t in towns:
+            min_dist = MIN_TOWN_DIST + (math.sqrt(t.pop) + math.sqrt(pop)) * TOWN_DIST_FACTOR
+            if (t.x - x) ** 2 + (t.y - y) ** 2 < min_dist ** 2:
+                too_close = True
+                break
+
+        if too_close:
+            continue
+
+        towns.append(Town(name=f"T{len(towns)}", x=x, y=y, pop=pop))
+
+    pprint(towns)
+else:
+    import pytiled_parser
+
+    MOUNTAIN_THR = 1
+
+    map = pytiled_parser.parse_map(Path(MAP_FILENAME))
+
+    terrain_layer: pytiled_parser.TileLayer
+    towns_layer: pytiled_parser.ObjectLayer
+    terrain_layer, = [layer for layer in map.layers if layer.name == "Terrain"]
+    towns_layer, = [layer for layer in map.layers if layer.name == "Towns"]
+
+    W, H = map.map_size
+    height = np.zeros((H, W))
+    terrain_data = np.array(terrain_layer.data)[::-1, :]
+    mountain_list = []
+    towns = []
+    lake_map = (np.equal(terrain_data, 2)).astype(np.uint8)
+
+    height[np.equal(lake_map, 1)] = -1
+    height[terrain_data == 3] = MOUNTAIN_THR + 1
+
+    for y, x in np.ndindex(height.shape):
+        if height[y, x] > MOUNTAIN_THR:
+            mountain_list.append((x, y))
+
+    for to in towns_layer.tiled_objects:
+        towns.append(Town(name=to.name,
+                          x=to.coordinates.x // map.tile_size.width,
+                          y=H - to.coordinates.y // map.tile_size.height,
+                          pop=to.properties["population"]))
 
 #######
 
@@ -380,19 +418,21 @@ class Kernel:
 
             #queue.sort()    # TODO: optimize
 
-        # route it
-        xx, yy = x1, y1
+        if xx == x1 and yy == y1:
 
-        path = [(xx, yy)]
+            # route it
+            xx, yy = x1, y1
 
-        while prev:
-            dx, dy, prev = prev
+            path = [(xx, yy)]
 
-            set_segment_traffic(xx, yy, dx, dy,
-                                get_segment_traffic(xx, yy, dx, dy) + volume)
-            xx, yy = xx + dx, yy + dy
+            while prev:
+                dx, dy, prev = prev
 
-            path.append((xx, yy))
+                set_segment_traffic(xx, yy, dx, dy,
+                                    get_segment_traffic(xx, yy, dx, dy) + volume)
+                xx, yy = xx + dx, yy + dy
+
+                path.append((xx, yy))
 
         # this is wrong! just because a tile is "cheap" does not mean that any edge leading into it is too
         # while (xx, yy) != (x2, y2):
@@ -417,8 +457,11 @@ class Kernel:
         #
         #     path.append((xx, yy))
 
-        # print(path)
-        paths.append(path)
+            # print(path)
+            paths.append(path)
+        else:
+            print(f"PATH FINDING ERROR: could not reach {x1} {y1} from {x2} {y2}")
+            path = None
 
         tv_labels = []
         tv_paths_bg = []
@@ -476,9 +519,11 @@ class Kernel:
             x, y, pop = town.x, town.y, town.pop
             tv_paths.append(TvPath(circle(x, y, r=0.35), fill="rgba(100% 100% 100%)"))
             tv_paths.append(TvPath(circle(x, y, r=0.35), stroke="rgba(0 0 0)", linewidth=0.1))
-            tv_labels.append(Label(x + 0.5, y + 0.5, f"{pop}", color="black"))
+            tv_labels.append(Label(x + 0.5, y + 0.0, town.name, color="black"))
+            tv_labels.append(Label(x + 0.5, y - 1.0, f"{pop}", color="black"))
 
-        tv_paths.append(TvPath(polyline(path), linewidth=2 * TV_SCALE, stroke="red"))
+        if path:
+            tv_paths.append(TvPath(polyline(path), linewidth=2 * TV_SCALE, stroke="red"))
         tv.send_annotations(labels=tv_labels, paths=tv_paths_bg + tv_paths)
 
         if step + 1 == num_steps:
