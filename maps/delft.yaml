@@ -1,0 +1,7 @@
+---
+center_coords: [52.00789235047934, 4.359467232751819]
+extents: [[51.88, 4.20], [52.10, 4.50]]
+country_code: "NL"
+pop_threshold: 3000
+mountain_threshold: 120
+water_threshold: 0.50

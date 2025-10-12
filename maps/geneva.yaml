@@ -1,0 +1,7 @@
+---
+center_coords: [46.205802, 6.149377]
+extents: [[46.15, 6.07], [46.3, 6.25]]
+country_code: "CH"
+pop_threshold: 500
+mountain_threshold: 700
+water_threshold: 0.08

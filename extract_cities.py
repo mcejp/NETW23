@@ -1,7 +1,3 @@
-discretized_extent=((34.5, 139.0), (36.0, 141.0))
-
-import os
-import csv
 import json
 
 def load_geonames(path):
@@ -51,26 +47,23 @@ def in_extent(lat, lon, extent):
     return (min_lat <= lat <= max_lat) and (min_lon <= lon <= max_lon)
 
 
-def filter_features_in_extent(jp_path, extent):
+def filter_features_in_extent(txt_path, extent):
     matches = []
-    for rec in load_geonames(jp_path):
+    for rec in load_geonames(txt_path):
         # keep only populated places (feature code PPL)
-        if not rec.get('feature_code','').startswith('PPL') or rec["population"] < 10_000:
+        if not rec.get('feature_code','').startswith('PPL'):
             continue
         if in_extent(rec['lat'], rec['lon'], extent):
             matches.append(rec)
     return matches
 
 
-if __name__ == '__main__':
-    jp_path = "inputs/JP.txt"
+def main(txt_path, extent):
+    matches = filter_features_in_extent(txt_path, extent)
+    print(f'Found {len(matches)} features inside extent {extent}')
+    # for m in matches[:20]:
+    #     print(f"{m.get('asciiname','')}	{m['lat']}	{m['lon']}	pop={m.get('population',0)}")
 
-    matches = filter_features_in_extent(jp_path, discretized_extent)
-    print(f'Found {len(matches)} features inside extent {discretized_extent}')
-    for m in matches[:20]:
-        print(f"{m.get('asciiname','')}	{m['lat']}	{m['lon']}	pop={m.get('population',0)}")
-
-    outjson = "japan_cities_in_extent.json"
     outlist = []
     for m in matches:
         # outlist.append(m)
@@ -80,6 +73,13 @@ if __name__ == '__main__':
             'longitude': m.get('lon', None),
             'population': m.get('population', 0),
         })
+    return outlist
+
+
+if __name__ == '__main__':
+    outlist = main("inputs/JP.txt", ((34.5, 139.0), (36.0, 141.0)))
+
+    outjson = "japan_cities_in_extent.json"
     with open(outjson, 'w', encoding='utf-8') as jf:
         json.dump(outlist, jf, ensure_ascii=False, indent=2)
     print('Wrote', outjson)
