@@ -1,0 +1,7 @@
+---
+center_coords: [35.48556194027054, 139.86056640390504]
+extents: [[34.85, 138.95], [36.0, 140.5]]
+country_code: "JP"
+pop_threshold: 10000
+mountain_threshold: 120
+water_threshold: 0.50
